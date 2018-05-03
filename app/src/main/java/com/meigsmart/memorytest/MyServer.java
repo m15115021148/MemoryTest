@@ -1,12 +1,16 @@
 package com.meigsmart.memorytest;
 
+import android.annotation.SuppressLint;
 import android.app.Service;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.Message;
 import android.support.annotation.Nullable;
 import android.util.Log;
 import android.widget.ImageView;
@@ -18,30 +22,16 @@ import java.util.List;
  * Created by chenMeng on 2018/5/2.
  */
 public class MyServer extends Service implements Runnable{
-    private Handler mHandler = new Handler();
-    public MyBinder binder = new MyBinder();
+
     private Bitmap bt ;
     private List<Bitmap> mList = new ArrayList<>();
-
-    private MyServer getInstance(){
-        Log.w("result","getinstance.......");
-        for (int i=0;i<1000;i++){
-            if (bt == null){
-                bt = BitmapFactory.decodeResource(getResources(),R.drawable.sqlash_bg);
-            }
-            mList.add(bt);
-        }
-        for (Bitmap bt:mList){
-            ImageView img = new ImageView(this);
-            img.setImageBitmap(bt);
-        }
-        return MyServer.this;
-    }
+    private int currPosition = 0;
+    private MyReceiver receiver;
 
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
-        return binder;
+        return null;
     }
 
     @Override
@@ -49,26 +39,67 @@ public class MyServer extends Service implements Runnable{
         return super.onUnbind(intent);
     }
 
+    @SuppressLint("HandlerLeak")
+    private Handler mHandler = new Handler(){
+        @Override
+        public void handleMessage(Message msg) {
+            super.handleMessage(msg);
+            mHandler.removeCallbacks(MyServer.this);
+        }
+    };
+
     @Override
     public void onCreate() {
         super.onCreate();
+        receiver = new MyReceiver();
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction("stop");
+        registerReceiver(receiver,intentFilter);
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        mHandler.removeCallbacks(this);
+        for (Bitmap bt: mList){
+            bt.recycle();
+        }
+        System.gc();
+        unregisterReceiver(receiver);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         mHandler.post(this);
-
+        Log.w("result","onStartCommand...");
         return START_REDELIVER_INTENT;
     }
 
     @Override
     public void run() {
+        Log.w("result","size:"+mList.size());
+        bt = BitmapFactory.decodeResource(getResources(),R.drawable.sqlash_bg);
+        mList.add(bt);
+
+        ImageView img = new ImageView(this);
+        img.setImageBitmap(mList.get(currPosition));
+        currPosition++;
+
+        if (currPosition == 40){
+            mHandler.sendEmptyMessage(1001);
+        }
+
         mHandler.postDelayed(this,1000);
     }
 
-    public class MyBinder extends Binder{
-        public MyServer getService(){
-            return getInstance();
+    public class MyReceiver extends BroadcastReceiver{
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if ("stop".equals(action)){
+                stopSelf();
+            }
         }
     }
 }
